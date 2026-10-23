@@ -1,0 +1,110 @@
+name: agent-senatsdatenbank-test
+x-app: &app
+  image: agent-senatsdatenbank-test:0.1.1
+  build: .
+  environment: &environment
+    PDF_FOLDER: /data
+    DATABASE_PATH: /state/knowledge.sqlite
+    OLLAMA_URL: http://ollama:11434
+    QDRANT_URL: http://qdrant:6333
+    QDRANT_COLLECTION: senatswissen_demo_v1
+    GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+    EMBEDDING_MODEL: mxbai-embed-large
+    PUBLIC_URL: http://localhost:${API_PORT:-8094}
+    PORT: 8094
+    BIND_HOST: 0.0.0.0
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: 5m
+      max-file: "2"
+
+services:
+  app:
+    <<: *app
+    restart: unless-stopped
+    environment:
+      <<: *environment
+      GEMINI_KEY_FILE: /run/secrets/gemini_api_key
+    ports:
+      - "127.0.0.1:${API_PORT:-8094}:8094"
+    volumes:
+      - ./data:/data:ro
+      - app_state:/state
+    secrets:
+      - gemini_api_key
+    depends_on:
+      - ollama
+      - qdrant
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8094/health', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  ollama:
+    image: ollama/ollama:0.11.6
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.3
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  webui:
+    image: ghcr.io/open-webui/open-webui:v0.12.3
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEBUI_PORT:-3002}:8080"
+    environment:
+      OPENAI_API_BASE_URL: http://app:8094/v1
+      OPENAI_API_KEY: local-demo
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_PERSISTENT_CONFIG: "false"
+      ENABLE_TITLE_GENERATION: "false"
+      ENABLE_FOLLOW_UP_GENERATION: "false"
+      ENABLE_TAGS_GENERATION: "false"
+      ENABLE_AUTOCOMPLETE_GENERATION: "false"
+    volumes:
+      - webui_data:/app/backend/data
+    depends_on:
+      app:
+        condition: service_healthy
+
+  demo:
+    <<: *app
+    profiles: [tools]
+    command: [demo]
+    volumes:
+      - ./data:/data
+
+  index:
+    <<: *app
+    profiles: [tools]
+    command: [index]
+    volumes:
+      - ./data:/data:ro
+      - app_state:/state
+    depends_on:
+      - ollama
+      - qdrant
+
+secrets:
+  gemini_api_key:
+    file: ./secrets/gemini_api_key.txt
+
+volumes:
+  app_state:
+  ollama_data:
+  qdrant_data:
+  webui_data:
