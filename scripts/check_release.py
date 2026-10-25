@@ -6,15 +6,30 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def private_extension_path(name):
+    value = name.replace('\\', '/').lower()
+    return (value.startswith(('archiv/', 'betrieb/', 'outputs/', '.agents/', '.codex/'))
+            or bool(re.search(r'(^|/)(?:inquiry_[^/]*|answer_[^/]*|test_inquiry[^/]*|test_answer[^/]*)\.py$', value)))
+
+
 def main():
     result = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT, check=True, capture_output=True)
     files = [name for name in result.stdout.decode('utf-8').split('\0') if name]
     if not files:
         raise SystemExit('No tracked files. Stage the curated release before running this check.')
     findings = []
+    # Scan only ancestors of the public branch. Local private stashes/bundles
+    # are not published, but a deletion commit must not hide an older private file.
+    head = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD'], cwd=ROOT, capture_output=True)
+    if head.returncode == 0:
+        history = subprocess.run(['git', 'log', '--format=', '--name-only', 'HEAD'],
+                                 cwd=ROOT, check=True, capture_output=True)
+        for name in set(history.stdout.decode('utf-8').splitlines()):
+            if name and private_extension_path(name):
+                findings.append((name, 'private extension exists in publishable commit history'))
     for name in files:
         path = ROOT / name
-        forbidden = (name.startswith(('state/', 'docker-state/', 'work/', '.venv/'))
+        forbidden = (private_extension_path(name) or name.startswith(('state/', 'docker-state/', 'work/', '.venv/'))
             or name.startswith('secrets/') and name != 'secrets/README.md'
             or name.startswith('data/') and name != 'data/README.md'
             or name.startswith('.env') and name != '.env.example'
@@ -24,6 +39,14 @@ def main():
             findings.append((name, 'runtime/private/binary file must not be tracked'))
             continue
         text = path.read_text(encoding='utf-8')
+        if name.startswith('src/') and path.suffix == '.py':
+            import ast
+            tree = ast.parse(text)
+            for item in ast.walk(tree):
+                modules = ([item.module or ''] if isinstance(item, ast.ImportFrom)
+                           else [alias.name for alias in item.names] if isinstance(item, ast.Import) else [])
+                if any(module.split('.')[0].startswith(('inquiry_', 'answer_')) for module in modules):
+                    findings.append((name, 'private extension import in public source'))
         for pattern, reason in [
             (r'AIza[A-Za-z0-9_-]{30,}', 'possible Google API key'),
             (r'AQ\.[A-Za-z0-9._~+/=\-]{35,}', 'possible Google API key'),

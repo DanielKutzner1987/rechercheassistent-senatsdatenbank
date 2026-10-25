@@ -20,3 +20,14 @@ dist/
 .pytest_cache/
 .DS_Store
 Thumbs.db
+
+# Private extensions are maintained outside this public project.
+src/inquiry_*.py
+src/answer_*.py
+tests/test_inquiry*.py
+tests/test_answer*.py
+Archiv/
+Betrieb/
+outputs/
+.agents/
+.codex/

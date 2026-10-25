@@ -58,6 +58,29 @@ class ReleaseChecks(unittest.TestCase):
     def test_public_template_allowed(self):
         self.assertFalse(self.check_file('.env.example', 'API_PORT=8094\n')[0])
 
+    def test_private_generator_import_is_rejected(self):
+        self.assertTrue(self.check_file('src/runtime.py', 'from inquiry_generator import register_generator\n')[0])
+
+    def test_deleting_private_file_does_not_hide_it_in_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            def git(*args):
+                return subprocess.run(['git', '-c', 'user.name=Release Test', '-c',
+                    'user.email=release-test@example.invalid', *args],cwd=root,check=True,capture_output=True)
+            git('init','-q')
+            (root/'src').mkdir()
+            (root/'src/inquiry_generator.py').write_text('# synthetic private extension',encoding='utf-8')
+            git('add','.'); git('commit','-qm','Synthetic private commit')
+            git('rm','src/inquiry_generator.py')
+            (root/'README.md').write_text('Public project',encoding='utf-8')
+            git('add','.'); git('commit','-qm','Remove private file from current tree')
+            spec=importlib.util.spec_from_file_location('history_release_check',SCRIPT)
+            module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+            module.ROOT=root
+            output=StringIO()
+            with redirect_stdout(output),self.assertRaises(SystemExit): module.main()
+            self.assertIn('publishable commit history',output.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()

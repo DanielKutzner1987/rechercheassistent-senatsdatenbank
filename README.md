@@ -3,6 +3,8 @@
 PDFs durchsuchen und mit Gemini verständliche Antworten mit Links auf die passenden
 PDF-Seiten erhalten. Enthält Open WebUI, Ollama für lokale Embeddings und Qdrant.
 Die drei mitgelieferten Demo-PDFs werden beim ersten Start erzeugt; ihre Angaben sind erfunden.
+Diese öffentliche Fassung enthält ausschließlich den Rechercheassistenten.
+Anfragen- und Antwortgeneratoren sind private Erweiterungen und nicht enthalten.
 
 ## Starten unter Windows
 
